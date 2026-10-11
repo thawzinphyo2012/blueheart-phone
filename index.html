@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <title>I love you &lt;3</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: Georgia, "Times New Roman", serif;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #start {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, #0a1628 0%, #000 70%);
+      color: #b8d4f0;
+      z-index: 10;
+      cursor: pointer;
+    }
+    #start .card {
+      text-align: center;
+      padding: 2rem 1.5rem;
+    }
+    #start h1 {
+      font-size: clamp(1.6rem, 7vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.75rem;
+      color: #e8f2ff;
+    }
+    #start p {
+      font-size: 1rem;
+      opacity: 0.85;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="start">
+    <div class="card">
+      <h1>I love you &lt;3</h1>
+      <p>Tap to open</p>
+    </div>
+  </div>
+  <canvas id="c"></canvas>
+  <audio id="bgm" src="love_you.mp3" loop playsinline></audio>
+  <script>
+    const WORDS = ["love you", "Love You", "LOVE YOU"];
+    const CENTER_TEXT = " Love You ";
+    const COLORS = [
+      [70, 130, 180],
+      [30, 144, 255],
+      [0, 191, 255],
+      [100, 149, 237],
+      [65, 105, 225],
+    ];
+
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const audio = document.getElementById("bgm");
+    const startEl = document.getElementById("start");
+
+    let W = 0, H = 0, SCALE = 18, dpr = 1;
+    let particles = [];
+    let frame = 0;
+    let fillStartFrame = 0;
+    let running = false;
+
+    function heartXY(t) {
+      const x = 16 * Math.pow(Math.sin(t), 3);
+      const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      return [x, -y];
+    }
+
+    function toScreen(x, y) {
+      return [x * SCALE + W / 2, y * SCALE + H / 2];
+    }
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = Math.floor(W * dpr);
+      canvas.height = Math.floor(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      SCALE = Math.min(W, H) / 36;
+    }
+
+    function buildParticles() {
+      const outline = [];
+      const placed = [];
+      const nOutline = Math.min(140, Math.floor(90 + Math.min(W, H) / 8));
+      const minGapOut = Math.max(18, SCALE * 1.35);
+
+      for (let i = 0; i < nOutline; i++) {
+        const t = (i / nOutline) * Math.PI * 2;
+        const [bx, by] = heartXY(t);
+        const [sx, sy] = toScreen(bx, by);
+        if (placed.some(([px, py]) => Math.hypot(sx - px, sy - py) < minGapOut)) continue;
+        placed.push([sx, sy]);
+        outline.push(makeParticle(sx, sy, i, "outline"));
+      }
+
+      const fill = [];
+      const placedFill = [];
+      const nFill = Math.min(110, Math.floor(70 + Math.min(W, H) / 10));
+      const minGapFill = Math.max(26, SCALE * 2);
+      let attempts = 0;
+      const maxAttempts = nFill * 80;
+
+      while (fill.length < nFill && attempts < maxAttempts) {
+        attempts++;
+        const t = Math.random() * Math.PI * 2;
+        const r = Math.random() * 0.86;
+        const [bx, by] = heartXY(t);
+        const [sx, sy] = toScreen(bx * r, by * r);
+        if (placedFill.some(([qx, qy]) => Math.hypot(sx - qx, sy - qy) < minGapFill)) continue;
+        placedFill.push([sx, sy]);
+        fill.push(makeParticle(sx, sy, Math.floor(Math.random() * 320), "fill"));
+      }
+
+      const outlineSpan = outline.length ? Math.max(...outline.map((p) => p.order)) : 0;
+      const framesPerStep = 1.6;
+      fillStartFrame = Math.floor(outlineSpan * framesPerStep) + 30;
+
+      for (const p of fill) p.delay = fillStartFrame + p.order;
+      for (const p of outline) p.delay = Math.floor(p.order * framesPerStep);
+
+      particles = outline.concat(fill);
+    }
+
+    function makeParticle(x, y, order, kind) {
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      return {
+        x, y, order, kind,
+        word: WORDS[Math.floor(Math.random() * WORDS.length)],
+        color,
+        alpha: 0,
+        flicker: Math.random() * Math.PI * 2,
+        delay: 0,
+        sizeMult: 0.85 + Math.random() * 0.3,
+      };
+    }
+
+    function rgba(c, a) {
+      return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    }
+
+    function drawWord(p, alpha) {
+      if (alpha <= 0) return;
+      const size = (p.kind === "outline" ? 15 : 13) * p.sizeMult * Math.max(0.75, SCALE / 18);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `bold ${size}px Arial, sans-serif`;
+
+      if (alpha > 0.08) {
+        ctx.shadowColor = rgba(p.color, Math.min(0.55, alpha * 0.7));
+        ctx.shadowBlur = size * 1.8;
+      }
+      ctx.fillStyle = rgba(p.color, alpha);
+      ctx.fillText(p.word, 0, 0);
+      ctx.restore();
+    }
+
+    function drawCenter() {
+      const centerStart = fillStartFrame + 200;
+      if (frame <= centerStart) return;
+
+      const progress = Math.min(1, (frame - centerStart) / 60);
+      const centerAlpha = 1 - Math.exp(-progress * 8);
+      const pulse = 1 + 0.025 * Math.sin(frame * 0.05);
+      const size = Math.min(W, H) * 0.07 * pulse;
+
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `bold ${size}px Georgia, serif`;
+      ctx.shadowColor = `rgba(173,216,255,${centerAlpha * 0.45})`;
+      ctx.shadowBlur = size * 0.9;
+      ctx.fillStyle = `rgba(255,250,245,${centerAlpha})`;
+      ctx.fillText(CENTER_TEXT, 0, 0);
+      ctx.restore();
+    }
+
+    function tick() {
+      if (!running) return;
+      frame++;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+
+      for (const p of particles) {
+        if (frame > p.delay && p.alpha < 1) {
+          p.alpha = Math.min(1, p.alpha + (14 + Math.random() * 4) / 255);
+        }
+        const flick = p.alpha >= 1
+          ? 0.75 + 0.25 * Math.sin(frame * 0.04 + p.flicker)
+          : 1;
+        drawWord(p, p.alpha * flick);
+      }
+
+      drawCenter();
+      requestAnimationFrame(tick);
+    }
+
+    function start() {
+      startEl.style.display = "none";
+      resize();
+      buildParticles();
+      frame = 0;
+      running = true;
+      audio.volume = 0.85;
+      audio.play().catch(() => {});
+      requestAnimationFrame(tick);
+    }
+
+    startEl.addEventListener("click", start, { once: true });
+    startEl.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      start();
+    }, { once: true });
+
+    window.addEventListener("resize", () => {
+      if (!running) return;
+      resize();
+      buildParticles();
+      frame = 0;
+    });
+
+    resize();
+  </script>
+</body>
+</html>
